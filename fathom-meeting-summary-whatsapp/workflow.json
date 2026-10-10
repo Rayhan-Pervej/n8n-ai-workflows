@@ -1,0 +1,235 @@
+{
+  "name": "Fathom Meeting Summary to WhatsApp",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fathom-meeting",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        624
+      ],
+      "id": "d4ac98d3-2219-407b-86f8-ffe464e7e8e4",
+      "name": "Fathom Webhook",
+      "webhookId": "fathom-meeting"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1392,
+        832
+      ],
+      "id": "9db20daf-4d5c-4207-b2c1-e403c40b662f",
+      "name": "Respond OK"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\nconst transcript = body.transcript || [];\n\nconst formattedTranscript = transcript\n  .map(entry => {\n    const name = entry.speaker?.display_name || 'Unknown';\n    return `${name}: ${entry.text}`;\n  })\n  .join('\\n');\n\nconst meetingTitle = body.meeting?.title || body.title || 'Meeting';\nconst meetingDate = body.meeting?.started_at || body.started_at || new Date().toISOString();\nconst date = new Date(meetingDate).toLocaleDateString('en-BD', {\n  timeZone: 'Asia/Dhaka',\n  year: 'numeric',\n  month: 'long',\n  day: 'numeric'\n});\n\nreturn [{\n  json: {\n    transcript: formattedTranscript,\n    meetingTitle,\n    date\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        624
+      ],
+      "id": "32262b5f-48e4-4e87-8cb0-70c768b531e9",
+      "name": "Parse Transcript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Meeting Title: {{ $json.meetingTitle }}\nDate: {{ $json.date }}\n\nTranscript:\n{{ $json.transcript }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are an executive assistant writing professional meeting minutes for a leaders call.\n\nThe transcript may be in Bangla, English, or a mix of both. Always write the output in English.\n\nOutput ONLY valid HTML. No markdown, no code fences, no explanation, no extra text before or after the HTML.\n\nUse exactly this HTML structure:\n\n<h1>Leaders Call Summary</h1>\n<p><strong>Date:</strong> {DATE}</p>\n<hr/>\n\n<h2>Key Takeaways</h2>\n<ul>\n  <li>...</li>\n</ul>\n\n<h2>Team Updates</h2>\n<table>\n  <thead>\n    <tr><th>Speaker</th><th>Completed</th><th>In Progress</th><th>Plan</th><th>Blockers</th></tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td><strong>Name</strong></td>\n      <td><ul><li>...</li></ul></td>\n      <td><ul><li>...</li></ul></td>\n      <td><ul><li>...</li></ul></td>\n      <td><ul><li>...</li></ul></td>\n    </tr>\n  </tbody>\n</table>\n\n<h2>High Risks</h2>\n<ul>\n  <li><strong>Risk title</strong> — description</li>\n</ul>\n\n<h2>Action Items</h2>\n<ul>\n  <li><strong>Person name</strong><ul><li>action item</li></ul></li>\n</ul>\n\n---\n\nSECTION DEFINITIONS — what to extract from the transcript for each section:\n\nKEY TAKEAWAYS:\n- The most important outcomes and highlights from the entire meeting that a leader needs to know at a glance\n- Include: major decisions made, critical issues raised, important announcements, who is responsible for what\n- Each bullet = one complete sentence summarizing one key point\n- This is an overall summary, not per-person\n\nTEAM UPDATES TABLE:\n- One row per person who gave an update in the meeting\n- Completed: what they finished or accomplished since the last call\n- In Progress: what they are actively working on right now\n- Plan: what they intend to do next, their next steps or upcoming tasks\n- Blockers: anything that is stopping them or slowing them down — dependencies, missing info, unresolved issues\n- If a person did not mention anything for a column, write N/A in that cell\n- Use bullet points inside each cell for multiple items\n\nHIGH RISKS:\n- Only real urgent problems or blockers that could delay delivery or affect the team\n- Format: Bold risk title — then description of the risk and who is affected\n- Examples: services down, deployment blocked, API not shared, UI mismatch with client requirements\n- If there are NO risks or blockers mentioned in the transcript, DO NOT include the <h2>High Risks</h2> tag at all\n\nACTION ITEMS:\n- Specific tasks that were assigned to or committed to by a person during the meeting\n- Grouped by person name in bold\n- Each action item is a sub-bullet under the person's name\n- Only include tasks that were explicitly mentioned or assigned in the transcript\n- If there are NO action items, DO NOT include the <h2>Action Items</h2> tag at all\n\n---\n\nSTRICT RULES:\n- Output ONLY raw HTML, nothing else\n- Replace {DATE} with the actual meeting date from the input\n- One table row per speaker — do not merge or skip anyone who gave an update\n- Only use information actually present in the transcript — do not invent anything\n- If High Risks has no content, omit the entire section including the <h2> tag\n- If Action Items has no content, omit the entire section including the <h2> tag"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1680,
+        624
+      ],
+      "id": "1a8ad50f-f80a-4575-bdfb-35555ee83b4f",
+      "name": "AI Summarize"
+    },
+    {
+      "parameters": {
+        "model": "global.anthropic.claude-sonnet-4-6",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAwsBedrock",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        832
+      ],
+      "id": "c79966ba-657e-48f6-a758-1b7737fa1e52",
+      "name": "AWS Bedrock Claude",
+      "credentials": {
+        "aws": {
+          "id": "YOUR_AWS_CREDENTIAL_ID",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "htmlInput": "=<html><head><meta charset='utf-8'><style>@page{margin:40px;}body{font-family:Arial,sans-serif;color:#222;max-width:800px;margin:0 auto;padding:0;orphans:3;widows:3;}h1{text-align:center;font-size:22px;font-weight:bold;margin-bottom:4px;}hr{border:1px solid #333;margin:16px 0;}h2{font-size:16px;font-weight:bold;margin-top:28px;margin-bottom:8px;break-after:avoid;page-break-after:avoid;}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;}thead{display:table-header-group;}tr{break-inside:avoid;page-break-inside:avoid;}th{background:#fff;font-weight:bold;padding:8px 10px;text-align:left;border:1px solid #333;}td{padding:8px 10px;border:1px solid #333;vertical-align:top;}ul{padding-left:18px;margin:0;}li{margin:3px 0;break-inside:avoid;page-break-inside:avoid;}strong{font-weight:bold;}p{margin:4px 0;font-size:14px;}</style></head><body>{{ $json.text }}</body></html>"
+      },
+      "type": "@custom-js/n8n-nodes-pdf-toolkit.html2Pdf",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        624
+      ],
+      "id": "b598a5bc-379b-4b29-a259-7ccee2cfb859",
+      "name": "HTML to PDF",
+      "credentials": {
+        "customJsApi": {
+          "id": "YOUR_CUSTOM_JS_API_CREDENTIAL_ID",
+          "name": "CustomJS account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "destinationKey": "pdfBase64",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        2224,
+        624
+      ],
+      "id": "34fed031-34e6-4b0c-8d28-251e8b781d75",
+      "name": "Extract PDF as Base64"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EVOLUTION_URL }}/message/sendMedia/{{ $env.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.EVOLUTION_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $env.WHATSAPP_RECIPIENT, mediatype: \"document\", mimetype: \"application/pdf\", fileName: 'leaders_call_' + new Date($('Fathom Webhook').first().json.body.meeting?.started_at || new Date()).toISOString().slice(0,10) + '.pdf', media: $json.pdfBase64, caption: '📋 Meeting Summary - ' + $('Parse Transcript').first().json.date }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2448,
+        624
+      ],
+      "id": "1e09a377-877f-4f23-8c50-7077306431b1",
+      "name": "Send PDF to WhatsApp"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Fathom Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Parse Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Transcript": {
+      "main": [
+        [
+          {
+            "node": "AI Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS Bedrock Claude": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Summarize",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Summarize": {
+      "main": [
+        [
+          {
+            "node": "HTML to PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML to PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF as Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF as Base64": {
+      "main": [
+        [
+          {
+            "node": "Send PDF to WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "meta": {},
+  "tags": []
+}

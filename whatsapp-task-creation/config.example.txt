@@ -1,0 +1,8 @@
+TASK_API_URL=https://tasks.example.com/api
+TASK_API_TOKEN=your_task_api_token
+TASK_APP_URL=https://tasks.example.com
+LEAD_LID=100000000000000@lid
+TRIGGER_KEYWORD=task
+DEFAULT_DEADLINE_DAYS=3
+PROJECT_ID=1
+LIST_ID=1

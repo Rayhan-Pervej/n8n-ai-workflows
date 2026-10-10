@@ -1,0 +1,481 @@
+{
+  "name": "WhatsApp Task Creation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-task",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        2912,
+        96
+      ],
+      "id": "d76c6cd0-933f-4439-87a3-9d5d3f06e13f",
+      "name": "WhatsApp Webhook",
+      "webhookId": "whatsapp-task"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ae96d0e0-a83c-4781-bd81-70564583cd05",
+              "leftValue": "={{ $('WhatsApp Webhook').first().json.body.data.key.participant }}",
+              "rightValue": "={{ $('Load Config').first().json.LEAD_LID }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "1de05a90-fac5-42c0-b7e9-0b337a5b8a4d",
+              "leftValue": "={{ (' ' + ($('WhatsApp Webhook').first().json.body.data.message.conversation ?? $('WhatsApp Webhook').first().json.body.data.message.documentMessage?.caption ?? $('WhatsApp Webhook').first().json.body.data.message.extendedTextMessage?.text ?? '').toLowerCase() + ' ').replace(/[^a-z0-9 ]/g, ' ') }}",
+              "rightValue": "={{ ' ' + String($('Load Config').first().json.TRIGGER_KEYWORD).toLowerCase() + ' ' }}",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3536,
+        96
+      ],
+      "id": "e16958a4-16a5-4774-a604-0c99fd60691e",
+      "name": "Is Task Command?"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Message: {{ $('WhatsApp Webhook').first().json.body.data.message.conversation ?? $('WhatsApp Webhook').first().json.body.data.message.documentMessage?.caption ?? $('WhatsApp Webhook').first().json.body.data.message.extendedTextMessage?.text ?? '' }}\nAssignee LIDs: {{ JSON.stringify($('WhatsApp Webhook').first().json.body.data.contextInfo?.mentionedJid ?? $('WhatsApp Webhook').first().json.body.data.message.documentMessage?.contextInfo?.mentionedJid ?? $('WhatsApp Webhook').first().json.body.data.message.extendedTextMessage?.contextInfo?.mentionedJid ?? []) }}\nToday's date: {{ $now.toFormat('yyyy-MM-dd') }}\nDefault deadline days: {{ $('Load Config').first().json.DEFAULT_DEADLINE_DAYS }}\nDefault project ID: {{ $('Load Config').first().json.PROJECT_ID }}\n\nAvailable projects: {{ $('Build Project List').first().json.projectList }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=You are a task extraction assistant. Extract task details from WhatsApp messages and return ONLY valid JSON, nothing else. No explanation, no markdown, just raw JSON.\n\nReturn ONLY this JSON format:\n{\n  \"title\": \"extracted task title\",\n  \"assigneeLids\": [\"lid1@lid\", \"lid2@lid\"],\n  \"end_date\": \"YYYY-MM-DD\",\n  \"description\": \"brief task description or empty string\",\n  \"project_id\": matching project ID as integer or default if unclear,\n  \"estimation_time\": estimated hours as a number or 0 if not mentioned,\n  \"isTask\": true or false\n}\n\nRules:\n- assigneeLids MUST be an array containing ALL LIDs from the Assignee LIDs input — include every single one, never skip any\n- If there is only one LID, still return it as an array: [\"lid@lid\"]\n- NEVER use the key name assigneeLid (singular) — always use assigneeLids (plural) as an array\n- end_date must always be in YYYY-MM-DD format\n- If no deadline mentioned, use default deadline days from today\n- Match project_id from the available projects list based on task context\n- If project is not clear, use the default project ID\n- If message is not a task command, set isTask to false\n- estimation_time: if hours explicitly mentioned use that value directly ('4 hours' = 4, '2h' = 2, 'half day' = 4). Otherwise calculate as (number of days from today to end_date inclusive) × 8. For example if today is 2026-07-01 and end_date is 2026-07-02 that is 2 days so 16 hours. If end_date equals today that is 1 day so 8 hours\n"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        4160,
+        -80
+      ],
+      "id": "d980cf22-c1c8-44ea-a1fe-16cf916918bf",
+      "name": "Extract Task Details"
+    },
+    {
+      "parameters": {
+        "model": "global.anthropic.claude-sonnet-4-6",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAwsBedrock",
+      "typeVersion": 1.1,
+      "position": [
+        4160,
+        96
+      ],
+      "id": "1df22b2b-499d-477d-8f83-9283e9150a0c",
+      "name": "AWS Bedrock Claude",
+      "credentials": {
+        "aws": {
+          "id": "YOUR_AWS_CREDENTIAL_ID",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.text;\nconst cleaned = raw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\nconst parsed = JSON.parse(cleaned);\n// normalize: handle both assigneeLids (array) and assigneeLid (singular) from LLM\nif (!parsed.assigneeLids) {\n  parsed.assigneeLids = parsed.assigneeLid ? [parsed.assigneeLid] : [];\n}\nif (!Array.isArray(parsed.assigneeLids)) {\n  parsed.assigneeLids = [parsed.assigneeLids];\n}\ndelete parsed.assigneeLid;\n// stop here when the message was not a task command\nif (parsed.isTask === false) {\n  return [];\n}\nreturn [{ json: parsed }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4512,
+        -80
+      ],
+      "id": "ae31dd19-8393-458e-a243-5e2cee2f3ddb",
+      "name": "Parse LLM JSON"
+    },
+    {
+      "parameters": {
+        "jsCode": "const userMapping = $('Load User Mapping').first().json.USER_MAPPING;\nconst mapping = Array.isArray(userMapping) ? userMapping : JSON.parse(userMapping);\n\nconst assigneeLids = $input.first().json.assigneeLids;\nconst lids = Array.isArray(assigneeLids) ? assigneeLids : [assigneeLids];\n\nconst users = lids.map(lid => mapping.find(u => u.lid === lid)).filter(u => u && u.user_id !== 0);\n\nif (users.length === 0) {\n  throw new Error(`No valid users found for LIDs: ${lids.join(', ')}`);\n}\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    user_ids: users.map(u => u.user_id),\n    assignee_names: users.map(u => u.name).join(', '),\n    assignee_lids: users.map(u => u.lid)\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4720,
+        -80
+      ],
+      "id": "25a9efb0-6771-4391-98a2-9a12003288ab",
+      "name": "Map Assignees"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Load Config').first().json.TASK_API_URL }}/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $('Load Config').first().json.TASK_API_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3744,
+        -80
+      ],
+      "id": "ffd876fe-849a-4236-8daf-b054782ec4dd",
+      "name": "Get Projects"
+    },
+    {
+      "parameters": {
+        "jsCode": "const projects = $input.all();\nconst projectList = projects.map(p => `${p.json.id}=${p.json.title}`).join(', ');\nconst slugMap = {};\nprojects.forEach(p => { slugMap[p.json.id] = p.json.slug; });\nreturn [{ json: { projectList, slugMap } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3952,
+        -80
+      ],
+      "id": "55f2427d-5a71-4eca-a116-4c3450bfc7dd",
+      "name": "Build Project List"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Load Config').first().json.TASK_API_URL }}/tasks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $('Load Config').first().json.TASK_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        5344,
+        -80
+      ],
+      "id": "10df15a7-1d5a-40cb-99fe-19440a8e06a3",
+      "name": "Create Task"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Map Assignees').first().json;\nconst boards = $input.all().map(i => i.json);\nconst inProgress = boards.find(b => b.title === 'In Progress');\nconst listId = inProgress ? inProgress.id : parseInt($('Load Config').first().json.LIST_ID);\n\n// one task per assignee; assignee_lid and assignee_name are only used for the WhatsApp message\nreturn item.user_ids.map((userId, i) => ({\n  json: {\n    title: item.title,\n    description: item.description || '',\n    project_id: parseInt(item.project_id),\n    list_id: listId,\n    assignee_ids: [parseInt(userId)],\n    start_date: new Date().toISOString().split('T')[0],\n    due_date: item.end_date,\n    estimated_hours: parseFloat(item.estimation_time) || 8,\n    assignee_lid: item.assignee_lids[i],\n    assignee_name: item.assignee_names.split(', ')[i]\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5136,
+        -80
+      ],
+      "id": "65f283b0-0b07-4f1e-a37b-cc4c2b57ce5e",
+      "name": "Build Task Payloads"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item, i) => ({\n  json: {\n    lid: $('Build Task Payloads').all()[i]?.json.assignee_lid,\n    name: $('Build Task Payloads').all()[i]?.json.assignee_name,\n    task_id: item.json.task?.id ?? item.json.id\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5552,
+        -80
+      ],
+      "id": "3d9c7123-b578-494e-bd2a-df7c2015b534",
+      "name": "Pair Tasks with Assignees"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EVOLUTION_URL }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.EVOLUTION_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.lid }}\",\n  \"delay\": 1500,\n  \"text\": \"Hi {{ $json.name }},\\n\\nA new task has been assigned to you.\\n\\nTask: {{ $('Map Assignees').first().json.title }}\\nDeadline: {{ $('Map Assignees').first().json.end_date }}\\nProject: {{ $('Build Project List').first().json.slugMap[$('Map Assignees').first().json.project_id] }}\\n\\nView: {{ $('Load Config').first().json.TASK_APP_URL }}/projects/{{ $('Build Project List').first().json.slugMap[$('Map Assignees').first().json.project_id] }}?task={{ $json.task_id }}\"\n}\n",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 10000
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        5760,
+        -80
+      ],
+      "id": "75a67b2e-513e-49f2-891a-b7f8c01c89fa",
+      "name": "Notify Assignee on WhatsApp"
+    },
+    {
+      "parameters": {
+        "putAllInOneKey": false
+      },
+      "type": "n8n-nodes-globals.globalConstants",
+      "typeVersion": 1,
+      "position": [
+        3120,
+        96
+      ],
+      "id": "1477fcc7-eff4-47f4-b421-1cb16f521629",
+      "name": "Load Config",
+      "credentials": {
+        "globalConstantsApi": {
+          "id": "YOUR_GLOBAL_CONSTANTS_API_CREDENTIAL_ID",
+          "name": "config"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "putAllInOneKey": false
+      },
+      "type": "n8n-nodes-globals.globalConstants",
+      "typeVersion": 1,
+      "position": [
+        3328,
+        96
+      ],
+      "id": "1e71730a-aa1c-441e-9c2e-b2fa0e870987",
+      "name": "Load User Mapping",
+      "credentials": {
+        "globalConstantsApi": {
+          "id": "YOUR_GLOBAL_CONSTANTS_API_CREDENTIAL_ID",
+          "name": "user-mapping"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Load Config').first().json.TASK_API_URL }}/projects/{{ $('Map Assignees').first().json.project_id }}/lists",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $('Load Config').first().json.TASK_API_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        4928,
+        -80
+      ],
+      "id": "4db527f4-dfba-48f2-bd71-23885b93b9e9",
+      "name": "Get Board Lists"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Task Command?": {
+      "main": [
+        [
+          {
+            "node": "Get Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS Bedrock Claude": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract Task Details",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Task Details": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM JSON": {
+      "main": [
+        [
+          {
+            "node": "Map Assignees",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Projects": {
+      "main": [
+        [
+          {
+            "node": "Build Project List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Project List": {
+      "main": [
+        [
+          {
+            "node": "Extract Task Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Assignees": {
+      "main": [
+        [
+          {
+            "node": "Get Board Lists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Task Payloads": {
+      "main": [
+        [
+          {
+            "node": "Create Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Task": {
+      "main": [
+        [
+          {
+            "node": "Pair Tasks with Assignees",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pair Tasks with Assignees": {
+      "main": [
+        [
+          {
+            "node": "Notify Assignee on WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Load User Mapping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load User Mapping": {
+      "main": [
+        [
+          {
+            "node": "Is Task Command?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Board Lists": {
+      "main": [
+        [
+          {
+            "node": "Build Task Payloads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "meta": {},
+  "tags": []
+}

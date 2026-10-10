@@ -1,0 +1,1 @@
+USER_MAPPING=[{"name":"Alice","lid":"100000000000001@lid","user_id":12},{"name":"Bob","lid":"100000000000002@lid","user_id":15}]

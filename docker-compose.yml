@@ -1,0 +1,21 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n-ai-workflows
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Dhaka}
+      - TZ=${TIMEZONE:-Asia/Dhaka}
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - EVOLUTION_URL=${EVOLUTION_URL}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE}
+      - WHATSAPP_RECIPIENT=${WHATSAPP_RECIPIENT}
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
